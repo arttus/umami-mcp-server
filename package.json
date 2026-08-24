@@ -1,0 +1,41 @@
+{
+  "name": "umami-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for Umami Analytics. Works with Umami Cloud and self-hosted instances.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "umami-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "npm run build && node test/smoke.mjs && node test/auth.mjs && node test/admin.mjs",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "umami",
+    "analytics"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
