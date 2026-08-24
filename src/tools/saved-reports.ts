@@ -7,10 +7,14 @@ import { confirmField, responseFormatField, websiteField } from "../schemas.js";
 import type { Paged, SavedReport } from "../types.js";
 
 /**
- * Goals, funnels, journeys, retention, segments, and cohorts are not exposed by
- * Umami's documented REST API. They live behind the web UI as generic "reports"
- * (POST/GET/DELETE /api/reports), discovered by watching the UI's own network
- * calls since there is no public documentation for this endpoint. Each report
+ * Goals, funnels, journeys, and retention are not exposed by Umami's documented
+ * REST API. They live behind the web UI as generic "reports" (POST/GET/DELETE
+ * /api/reports), discovered by watching the UI's own network calls since there
+ * is no public documentation for this endpoint. The server-validated type enum
+ * is "attribution"|"breakdown"|"funnel"|"goal"|"heatmap"|"journey"|"performance"|
+ * "retention"|"revenue"|"utm" (confirmed from a 400 validation error) — segment
+ * and cohort are NOT in this list, they live on a separate /websites/:id/segments
+ * resource instead (see umami_create_segment / umami_create_cohort). Each report
  * type shapes its own 'parameters' object differently, learned the same way:
  *   - goal:   { type: "url" | "event", value: string }
  *   - funnel: { steps: [{ type: "path" | "event", value: string, filters: [] }], window: number }
@@ -18,8 +22,8 @@ import type { Paged, SavedReport } from "../types.js";
  */
 
 const savedReportTypeField = z
-  .enum(["goal", "funnel", "journey", "retention", "segment", "cohort"])
-  .describe("Report type, matching the sidebar section it appears under in the Umami UI.");
+  .enum(["goal", "funnel", "journey", "retention"])
+  .describe("Report type, matching the sidebar section it appears under in the Umami UI. For segments or cohorts, use umami_list_segments_cohorts instead.");
 
 function reportToRow(report: SavedReport) {
   return {
@@ -155,12 +159,12 @@ Examples:
   server.registerTool(
     "umami_list_saved_reports",
     {
-      title: "List saved goals, funnels, journeys, retention, segments, or cohorts",
-      description: `List the saved reports of one type for a website, as they appear in the Umami UI sidebar (Goals, Funnels, Journeys, Retention, Segments, Cohorts).
+      title: "List saved goals, funnels, journeys, or retention reports",
+      description: `List the saved reports of one type for a website, as they appear in the Umami UI sidebar (Goals, Funnels, Journeys, Retention). For Segments or Cohorts, use umami_list_segments_cohorts instead — they live on a different endpoint.
 
 Args:
   - website (string, optional): Website ID, name, or domain.
-  - type (string, required): One of 'goal', 'funnel', 'journey', 'retention', 'segment', 'cohort'.
+  - type (string, required): One of 'goal', 'funnel', 'journey', 'retention'.
   - response_format ('markdown' | 'json'): Output format (default: 'markdown').
 
 Returns:
@@ -204,8 +208,8 @@ Returns:
   server.registerTool(
     "umami_delete_saved_report",
     {
-      title: "Delete a saved goal, funnel, journey, retention, segment, or cohort",
-      description: `Permanently delete a saved report (goal, funnel, journey, retention, segment, or cohort) so it no longer appears in the Umami UI. Get the report ID from umami_list_saved_reports.
+      title: "Delete a saved goal, funnel, journey, or retention report",
+      description: `Permanently delete a saved report (goal, funnel, journey, or retention) so it no longer appears in the Umami UI. Get the report ID from umami_list_saved_reports. For a segment or cohort, use umami_delete_segment_cohort instead.
 
 This cannot be undone. Requires confirm=true.
 

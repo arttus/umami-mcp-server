@@ -37,6 +37,7 @@ import { registerReplayTools } from "./tools/replays.js";
 import { registerRetentionTools } from "./tools/retention.js";
 import { registerRevenueTools } from "./tools/revenue.js";
 import { registerSavedReportTools } from "./tools/saved-reports.js";
+import { registerSegmentTools } from "./tools/segments.js";
 
 async function main(): Promise<void> {
   let config;
@@ -66,6 +67,7 @@ async function main(): Promise<void> {
   registerRetentionTools(server, client);
   registerRevenueTools(server, client);
   registerSavedReportTools(server, client);
+  registerSegmentTools(server, client);
   registerRawTools(server, client);
 
   const transport = new StdioServerTransport();

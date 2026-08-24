@@ -137,6 +137,16 @@ export interface ActiveVisitors {
   visitors: number;
 }
 
+export interface SavedSegment {
+  id: string;
+  websiteId: string;
+  type: "segment" | "cohort";
+  name: string;
+  parameters: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SavedReport {
   id: string;
   userId: string;
