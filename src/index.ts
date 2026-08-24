@@ -36,6 +36,7 @@ import { registerFunnelTools } from "./tools/funnels.js";
 import { registerReplayTools } from "./tools/replays.js";
 import { registerRetentionTools } from "./tools/retention.js";
 import { registerRevenueTools } from "./tools/revenue.js";
+import { registerSavedReportTools } from "./tools/saved-reports.js";
 
 async function main(): Promise<void> {
   let config;
@@ -64,6 +65,7 @@ async function main(): Promise<void> {
   registerReplayTools(server, client);
   registerRetentionTools(server, client);
   registerRevenueTools(server, client);
+  registerSavedReportTools(server, client);
   registerRawTools(server, client);
 
   const transport = new StdioServerTransport();

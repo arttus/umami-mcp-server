@@ -137,6 +137,18 @@ export interface ActiveVisitors {
   visitors: number;
 }
 
+export interface SavedReport {
+  id: string;
+  userId: string;
+  websiteId: string;
+  type: string;
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ReplaySummary {
   id: string;
   sessionId: string;
