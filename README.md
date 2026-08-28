@@ -1,8 +1,10 @@
 # umami-mcp-server
 
-An MCP server for [Umami Analytics](https://umami.is). Read-only, works against both Umami Cloud and self-hosted instances, and speaks in ranges like `last_month` and site names like `example.com` rather than epoch milliseconds and UUIDs.
+An MCP server for [Umami Analytics](https://umami.is). Works against both Umami Cloud and self-hosted instances, and speaks in ranges like `last_month` and site names like `example.com` rather than epoch milliseconds and UUIDs.
 
-Twenty-five tools covering website discovery, traffic stats, time series, ranked breakdowns, custom events, individual sessions, a one-call full report, full admin CRUD for websites/users/teams, a composite client-onboarding tool, and a raw GET escape hatch for anything else in the Umami API.
+Forty-eight tools covering website discovery, traffic stats, time series, ranked breakdowns, custom events, individual sessions, funnels, journeys, goals, retention, revenue, session replays and click heatmaps, saved reports and audience segments that show up in the Umami UI, full admin CRUD for websites/users/teams, a composite client-onboarding tool, and a raw GET escape hatch for anything else in the Umami API.
+
+**This server is not read-only.** Most tools read, but it can also create, update, and permanently delete websites, users, teams, saved reports, and segments, and it can wipe a website's collected data. See [Write access and safety](#write-access-and-safety) before connecting it to anything you care about.
 
 Admin tools (creating users, teams, and websites; deleting anything) require **self-hosted Umami with an admin login or admin API key**. Umami Cloud does not expose user or team management via the API, so those tools return a clear error rather than a confusing 404 if pointed at Cloud.
 
@@ -71,6 +73,22 @@ For a self-hosted instance, swap in `UMAMI_BASE_URL` and either the key or the u
 UMAMI_API_KEY=your-key npm run inspect
 ```
 
+## Write access and safety
+
+The credentials you give this server are the real ceiling on what it can do. An admin key means the agent holds admin rights.
+
+Tools that change state:
+
+- **Create:** `umami_create_website`, `umami_create_user`, `umami_create_team`, `umami_create_goal`, `umami_create_funnel`, `umami_create_segment`, `umami_create_cohort`, `umami_onboard_client`
+- **Update:** `umami_update_website`, `umami_update_user`, `umami_update_team`, `umami_update_team_user`, `umami_add_team_user`, `umami_join_team`
+- **Delete or wipe:** `umami_reset_website`, `umami_delete_website`, `umami_delete_user`, `umami_delete_team`, `umami_remove_team_user`, `umami_delete_saved_report`, `umami_delete_segment_cohort`
+
+Every tool in the delete-or-wipe group requires a literal `confirm: true` argument and fails without it. There is no second round-trip: **the tool call itself is the confirmation**, and `umami_reset_website` and `umami_delete_website` destroy collected analytics data that cannot be recovered.
+
+To run this read-only, scope the credential rather than trusting the tool list: give it a non-admin API key, or a login whose role only grants view access to the websites it should see. Umami enforces that server-side, so the write tools fail with a permission error instead of succeeding.
+
+If your MCP client supports per-tool permissions, a second layer is to allowlist only the `umami_get_*`, `umami_list_*`, `umami_traffic_report`, and `umami_api_get` tools, and gate or deny the rest.
+
 ## Tools
 
 ### Analytics (read-only)
@@ -88,13 +106,48 @@ UMAMI_API_KEY=your-key npm run inspect
 | `umami_get_session` | One session plus its page-by-page activity trail |
 | `umami_traffic_report` | Stats and seven breakdowns in a single call. The right tool for "how is the site doing" |
 
+### Behavior analysis (read-only, computed here)
+
+Umami has no endpoints for any of these. Each is derived from data Umami does expose, so they work on stock instances but cost more API calls than a plain stat. See [Design notes](#design-notes) for what that costs.
+
+| Tool | What it does |
+| --- | --- |
+| `umami_get_goal` | Conversion rate toward one page or one custom event, against the same-range visitor baseline. Two filtered stats calls |
+| `umami_get_funnel` | Session counts and drop-off across 2 to 8 ordered steps, each a page path or an event name. Walks session activity trails |
+| `umami_get_journeys` | The most common ordered page sequences visitors take, optionally from a given entry path |
+| `umami_get_retention` | Cohort retention curve by day, week, or month. Requires the site to call `umami.identify()` with a stable ID, otherwise every cohort is empty |
+| `umami_get_revenue` | Total, average, and count from a numeric property on a custom event, e.g. an `amount` field on `purchase`. Filterable, so revenue by UTM source works |
+
+### Session replay and heatmaps (read-only)
+
+| Tool | What it does |
+| --- | --- |
+| `umami_list_replays` | Recorded session replays for a range, newest first. Only exist where recording is enabled and the session was sampled |
+| `umami_get_replay` | Summary of one replay: pages, click count, duration and event breakdown. Optionally the raw click coordinates. Never the raw rrweb stream |
+| `umami_get_click_heatmap` | Click-density grid for one page path, built by downloading replays and normalizing every click against its recording's viewport |
+| `umami_get_recorder_config` | The live config Umami is actually serving to the tracker. Ground truth after `umami_update_website` |
+
+### Saved reports and audiences (visible in the Umami UI)
+
+Everything above computes on demand and leaves no trace in the dashboard. These persist definitions so they appear in the Umami web UI for anyone browsing it.
+
+| Tool | What it does |
+| --- | --- |
+| `umami_create_goal` | Persist a Goal under Behavior, Goals |
+| `umami_create_funnel` | Persist a Funnel under Behavior, Funnels |
+| `umami_list_saved_reports` | List saved goals, funnels, journeys, or retention reports for a website |
+| `umami_delete_saved_report` | **Destructive.** Delete a saved report. Requires `confirm=true` |
+| `umami_create_segment` | Persist an audience Segment (a saved filter combination) under Audience, Segments |
+| `umami_create_cohort` | Persist a Cohort (visitors who did something in a window, optionally filtered further) under Audience, Cohorts |
+| `umami_list_segments_cohorts` | List saved segments or cohorts |
+| `umami_delete_segment_cohort` | **Destructive.** Delete a saved segment or cohort. Requires `confirm=true` |
+
 ### Admin: websites (self-hosted, admin login or key)
 
 | Tool | What it does |
 | --- | --- |
 | `umami_create_website` | Register a new website and get back its tracking ID and `<script>` snippet |
 | `umami_update_website` | Rename, change domain, set a public share link, and configure every replay/heatmap field: enable flags, sample rates, PII mask level, max recording length, block selector |
-| `umami_get_recorder_config` | Read the live config Umami is actually serving to the tracker for a website. Ground truth after `umami_update_website`, since the same field appears in different units across Umami's own docs |
 | `umami_reset_website` | **Destructive.** Wipe all collected data, keep the website and tracking ID. Requires `confirm=true` |
 | `umami_delete_website` | **Destructive.** Delete the website registration and all its data. Requires `confirm=true` |
 
@@ -133,9 +186,9 @@ UMAMI_API_KEY=your-key npm run inspect
 
 | Tool | What it does |
 | --- | --- |
-| `umami_api_get` | Read-only GET against any Umami endpoint without a dedicated tool |
+| `umami_api_get` | Read-only GET against any Umami endpoint without a dedicated tool. Cannot create, modify, reset, or delete anything |
 
-Every data tool takes `response_format`: `markdown` for a readable summary, `json` for the structured payload. Every destructive tool (`reset`, `delete`, `remove`) takes a required `confirm: true` argument; the call is rejected without it, and there is no other confirmation step, so treat that argument as the point of no return.
+Every data tool takes `response_format`: `markdown` for a readable summary, `json` for the structured payload.
 
 ### Date ranges
 
@@ -158,7 +211,7 @@ Supported keys: `path`, `referrer`, `title`, `query`, `browser`, `os`, `device`,
 
 ### Breakdown dimensions
 
-For `umami_get_metrics` and the `breakdowns` argument of `umami_traffic_report`: `path`, `entry`, `exit`, `title`, `query`, `referrer`, `channel`, `domain`, `country`, `region`, `city`, `browser`, `os`, `device`, `language`, `screen`, `event`, `hostname`, `tag`, `distinctId`.
+For `umami_get_metrics` and the `breakdowns` argument of `umami_traffic_report`: `path`, `entry`, `exit`, `title`, `query`, `referrer`, `channel`, `domain`, `country`, `region`, `city`, `browser`, `os`, `device`, `language`, `screen`, `event`, `hostname`, `tag`, `distinctId`, plus the five `utm*` dimensions.
 
 ## Examples
 
@@ -168,6 +221,11 @@ Ask naturally once it is connected:
 - "Give me the full analytics rundown for the last 30 days" → `umami_traffic_report`
 - "Which landing page has the worst bounce rate?" → `umami_get_metrics` with `type=entry`, `expanded=true`
 - "How many contact form submits this week?" → `umami_get_events_series` with `event=contact-form-submit`
+- "Where do people drop off between pricing and signup?" → `umami_get_funnel` with `steps=["/pricing", "/signup", "signup-complete"]`
+- "What do people do after landing on the homepage?" → `umami_get_journeys` with `start_path="/"`
+- "How much revenue came from Google this month?" → `umami_get_revenue` with `event=purchase`, `property=amount`, `filters={ utmSource: "google" }`
+- "Where are people clicking on the pricing page?" → `umami_get_click_heatmap` with `path="/pricing"`
+- "Save that funnel so the client can see it in the dashboard" → `umami_create_funnel`
 - "Show me top pages for mobile visitors in Florida" → `umami_get_metrics` with `type=path`, `filters={ device: "mobile", region: "US-FL" }`
 - "What did that session actually do on the site?" → `umami_list_sessions`, then `umami_get_session`
 - "Set up tracking for the new client, its own team, and put jordan on it" → `umami_onboard_client` with `website_name`, `domain`, `team_name`, `grant_user_id`
@@ -176,12 +234,17 @@ Ask naturally once it is connected:
 ## Design notes
 
 - **Website resolution.** Any tool's `website` argument accepts a UUID, a name, or a domain. Names and domains are matched against a 60-second cached website list, with an explicit ambiguity error rather than a silent wrong guess. Creating, updating, or deleting a website refreshes that cache immediately.
+- **Undocumented endpoints, marked as such.** Saved goals, funnels, journeys, and retention reports live on `POST/GET/DELETE /reports`; segments and cohorts live on a separate `/websites/:id/segments`. Neither is in Umami's published REST API. Both were mapped by watching the web UI's own network calls, and the exact request shapes are documented in comments at the top of `src/tools/saved-reports.ts` and `src/tools/segments.ts`, including which enum values a 400 response confirmed. These can change without notice on a future Umami version, unlike the documented analytics endpoints.
+- **Derived analytics cost API calls.** Funnels and journeys have no endpoint, so both walk session activity trails: one `/sessions` page plus one `/sessions/:id/activity` call per session, capped by `max_sessions` (default 500, max 2000) and reported back as `truncated` when the range held more. The click heatmap downloads up to `max_replays` recordings (default 100). Umami Cloud rate-limits to 50 calls per 15 seconds, and the client surfaces that as a plain message rather than a raw 429. Raise the caps deliberately.
+- **Retention needs instrumentation, not just traffic.** `umami_get_retention` is built from `distinctId`, which only exists where the site calls `umami.identify(persistentId)`. Without it, cohort size is 0 no matter how much real traffic there is, and the tool says so instead of reporting a broken curve.
+- **Computed versus saved.** `umami_get_goal` and `umami_get_funnel` compute on demand and leave nothing in the dashboard. `umami_create_goal` and `umami_create_funnel` persist a definition that shows up in the Umami UI. Two different jobs, deliberately two different tools.
 - **Full replay/heatmap config, not just toggles.** `umami_update_website` exposes every field Umami's `replayConfig` accepts: enable flags, independent sample rates for replay vs. heatmaps, PII mask level, block selector, and max recording duration. Umami's own docs give inconsistent units for `maxDuration` (one example implies milliseconds, another implies seconds); rather than guess, `umami_get_recorder_config` reads the same public endpoint the tracker itself calls, so you can confirm the effective value after saving instead of trusting either doc example.
+- **Replays are summarized, never dumped.** `umami_get_replay` returns pages, click count, and a duration breakdown. The raw rrweb event stream can run to tens of thousands of events and would blow any context window.
 - **Derived metrics.** Umami returns raw `bounces` and `totaltime` counts. Bounce rate, views per visit, and average visit duration are computed here so every response is directly readable.
 - **Partial failure.** `umami_traffic_report` runs its breakdowns in parallel and drops any dimension the instance does not support, naming the skipped ones instead of failing the whole report. This matters because dimension support varies across Umami versions.
-- **Destructive ops are opt-in, not confirmed twice.** `umami_reset_website`, `umami_delete_website`, `umami_delete_user`, `umami_remove_team_user`, and `umami_delete_team` all require a literal `confirm: true` argument and fail otherwise. There is no separate "are you sure" round-trip: the tool call itself is the confirmation, so an agent (or a person) should only pass `confirm: true` once they mean it.
+- **Destructive ops are opt-in, not confirmed twice.** Every reset, delete, and remove tool requires a literal `confirm: true` argument and fails otherwise. There is no separate "are you sure" round-trip: the tool call itself is the confirmation, so an agent (or a person) should only pass `confirm: true` once they mean it.
 - **`umami_onboard_client` is best-effort, not transactional.** Umami's API has no multi-step transaction support. If team creation succeeds but the website step fails, the team is left in place and the error message says so explicitly, along with what to check next, rather than silently rolling back or hiding the partial state.
-- **Escape hatch.** `umami_api_get` is deliberately GET-only, separate from the admin tools above. It cannot create, modify, reset, or delete anything.
+- **Escape hatch stays read-only.** `umami_api_get` is deliberately GET-only, separate from the admin tools above. It cannot create, modify, reset, or delete anything.
 - **Response size.** Responses are capped at 25,000 characters with a message pointing at `limit`, `offset`, or a narrower range.
 
 ## Tests
@@ -190,11 +253,19 @@ Ask naturally once it is connected:
 npm test
 ```
 
-`test/smoke.mjs` stands up a fake Umami API, connects a real MCP client over stdio, and exercises the analytics tools plus their error paths. `test/auth.mjs` covers the self-hosted login exchange and the token refresh that fires when a cached bearer token goes stale. `test/admin.mjs` covers website/user/team CRUD, team membership, the composite onboarding tool, and confirms every destructive tool refuses to run without `confirm=true`.
+Three suites run against a fake Umami API over a real MCP stdio client. `test/smoke.mjs` exercises the analytics tools plus their error paths. `test/auth.mjs` covers the self-hosted login exchange and the token refresh that fires when a cached bearer token goes stale. `test/admin.mjs` covers website/user/team CRUD, team membership, the composite onboarding tool, and confirms every destructive admin tool refuses to run without `confirm=true`.
+
+Coverage is the core analytics and admin surface. The behavior-analysis, replay, saved-report, and segment tools are not yet in the suites and have been verified by hand against a live self-hosted instance.
 
 ## Verified against
 
-Umami v3 API reference as of August 2026: `/websites`, `/websites/:id`, `/websites/:id/stats`, `/pageviews`, `/metrics`, `/metrics/expanded`, `/events/series`, `/active`, `/daterange`, `/sessions`, `/sessions/:id`, `/sessions/:id/activity`, `/websites/:id/reset`, `/users`, `/admin/users`, `/users/:id`, `/users/:id/websites`, `/users/:id/teams`, `/teams`, `/teams/join`, `/teams/:id`, `/teams/:id/users`, `/teams/:id/users/:userId`, `/teams/:id/websites`. Cloud requests go to `https://api.umami.is/v1` with a bearer token; self-hosted requests go to `{base}/api`. User and team management endpoints only exist on self-hosted instances.
+Umami v3 API as of August 2026.
+
+Documented endpoints: `/websites`, `/websites/:id`, `/websites/:id/stats`, `/pageviews`, `/metrics`, `/metrics/expanded`, `/events/series`, `/active`, `/daterange`, `/sessions`, `/sessions/:id`, `/sessions/:id/activity`, `/websites/:id/reset`, `/websites/:id/event-data/values`, `/users`, `/admin/users`, `/users/:id`, `/users/:id/websites`, `/users/:id/teams`, `/teams`, `/teams/join`, `/teams/:id`, `/teams/:id/users`, `/teams/:id/users/:userId`, `/teams/:id/websites`.
+
+Undocumented endpoints, mapped from the web UI: `/reports` (saved goals, funnels, journeys, retention), `/websites/:id/segments` (segments and cohorts), `/websites/:id/replays`, `/websites/:id/replays/:id`.
+
+Cloud requests go to `https://api.umami.is/v1` with a bearer token; self-hosted requests go to `{base}/api`. User and team management endpoints only exist on self-hosted instances.
 
 ## License
 
