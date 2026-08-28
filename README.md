@@ -10,7 +10,7 @@ Admin tools (creating users, teams, and websites; deleting anything) require **s
 
 ## What you can ask it
 
-The point of this server is that you stop clicking through a dashboard and stop looking up website UUIDs. You describe what you want in plain language, and your agent picks the tool, resolves `example.com` to its ID, turns "last month" into timestamps in your timezone, and hands back a readable answer. Everything below is a real thing you can type.
+The Umami dashboard is a good place to look at your analytics. It is a tedious place to set them up, and a slow place to answer a question that needs three screens and a UUID. That is the gap this server fills: you describe what you want in plain language, and your agent picks the tool, resolves `example.com` to its ID, turns "last month" into timestamps in your timezone, and hands back a readable answer. Everything below is a real thing you can type.
 
 **See how the site is doing.**
 
@@ -29,7 +29,7 @@ The point of this server is that you stop clicking through a dashboard and stop 
 - "How much revenue came from Google this month?" → `umami_get_revenue` with `event=purchase`, `property=amount`, `filters={ utmSource: "google" }`
 - "Do people come back the week after they sign up?" → `umami_get_retention`, if the site calls `umami.identify()`
 
-**Build the dashboard by talking to it.** Answers computed on demand disappear when the conversation ends. Ask it to save one and it shows up in the Umami web UI for anyone who logs in, no dashboard clicking involved.
+**Set the dashboard up by talking to it.** Answers computed on demand disappear when the conversation ends. Describe the goal, funnel, or segment you want and it is built for you in the Umami web UI, waiting there for anyone who logs in, without you filling in the forms.
 
 - "Save that funnel so the client sees it under Behavior" → `umami_create_funnel`
 - "Make a goal for the thank-you page" → `umami_create_goal`
@@ -43,7 +43,7 @@ The point of this server is that you stop clicking through a dashboard and stop 
 - "Turn on session recording at 25 percent sampling, and mask form inputs" → `umami_update_website`, then `umami_get_recorder_config` to confirm what the tracker actually receives
 - "Wipe the test data before this site goes live" → `umami_reset_website` with `confirm=true`
 
-A useful pattern is chaining without naming any tools: "which page loses the most people, then show me a few recordings of them leaving" walks `umami_get_metrics`, then `umami_list_replays` filtered to that path, then `umami_get_replay`. The agent handles the ID passing.
+A useful pattern is chaining without naming any tools: "which page loses the most people, then show me a few recordings of them leaving" walks `umami_get_metrics`, then `umami_list_replays` filtered to that path, then `umami_get_replay`. Three screens and some ID copying in the UI, one sentence here.
 
 ## Install
 
