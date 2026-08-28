@@ -8,6 +8,43 @@ Forty-eight tools covering website discovery, traffic stats, time series, ranked
 
 Admin tools (creating users, teams, and websites; deleting anything) require **self-hosted Umami with an admin login or admin API key**. Umami Cloud does not expose user or team management via the API, so those tools return a clear error rather than a confusing 404 if pointed at Cloud.
 
+## What you can ask it
+
+The point of this server is that you stop clicking through a dashboard and stop looking up website UUIDs. You describe what you want in plain language, and your agent picks the tool, resolves `example.com` to its ID, turns "last month" into timestamps in your timezone, and hands back a readable answer. Everything below is a real thing you can type.
+
+**See how the site is doing.**
+
+- "How did example.com do last month compared to the month before?" → `umami_get_stats` with `range=last_month`
+- "Give me the full rundown for the last 30 days" → `umami_traffic_report`, stats plus seven breakdowns in one call
+- "Which landing page has the worst bounce rate?" → `umami_get_metrics` with `type=entry`, `expanded=true`
+- "Show me top pages for mobile visitors in Florida" → `umami_get_metrics` with `filters={ device: "mobile", region: "US-FL" }`
+- "How many contact form submits this week?" → `umami_get_events_series` with `event=contact-form-submit`
+
+**Work out why.** These are the questions a stats page cannot answer, and the ones this server computes for you even though Umami has no endpoint for them.
+
+- "Where do people drop off between pricing and signup?" → `umami_get_funnel` with `steps=["/pricing", "/signup", "signup-complete"]`
+- "What do people actually do after landing on the homepage?" → `umami_get_journeys` with `start_path="/"`
+- "Where are people clicking on the pricing page?" → `umami_get_click_heatmap` with `path="/pricing"`
+- "What did that one session do on the site?" → `umami_list_sessions`, then `umami_get_session` or `umami_get_replay`
+- "How much revenue came from Google this month?" → `umami_get_revenue` with `event=purchase`, `property=amount`, `filters={ utmSource: "google" }`
+- "Do people come back the week after they sign up?" → `umami_get_retention`, if the site calls `umami.identify()`
+
+**Build the dashboard by talking to it.** Answers computed on demand disappear when the conversation ends. Ask it to save one and it shows up in the Umami web UI for anyone who logs in, no dashboard clicking involved.
+
+- "Save that funnel so the client sees it under Behavior" → `umami_create_funnel`
+- "Make a goal for the thank-you page" → `umami_create_goal`
+- "Create a segment for paid mobile traffic" → `umami_create_segment`
+- "What reports are already saved for this site?" → `umami_list_saved_reports`
+
+**Run the instance.** Self-hosted, with an admin credential.
+
+- "Set up tracking for the new client, its own team, and put jordan on it" → `umami_onboard_client`, one call for website plus team plus access
+- "Give me the tracking snippet for that site" → comes back with the `<script>` tag from `umami_create_website`
+- "Turn on session recording at 25 percent sampling, and mask form inputs" → `umami_update_website`, then `umami_get_recorder_config` to confirm what the tracker actually receives
+- "Wipe the test data before this site goes live" → `umami_reset_website` with `confirm=true`
+
+A useful pattern is chaining without naming any tools: "which page loses the most people, then show me a few recordings of them leaving" walks `umami_get_metrics`, then `umami_list_replays` filtered to that path, then `umami_get_replay`. The agent handles the ID passing.
+
 ## Install
 
 ```bash
@@ -212,24 +249,6 @@ Supported keys: `path`, `referrer`, `title`, `query`, `browser`, `os`, `device`,
 ### Breakdown dimensions
 
 For `umami_get_metrics` and the `breakdowns` argument of `umami_traffic_report`: `path`, `entry`, `exit`, `title`, `query`, `referrer`, `channel`, `domain`, `country`, `region`, `city`, `browser`, `os`, `device`, `language`, `screen`, `event`, `hostname`, `tag`, `distinctId`, plus the five `utm*` dimensions.
-
-## Examples
-
-Ask naturally once it is connected:
-
-- "How did the site do last month compared to the month before?" → `umami_get_stats` with `range=last_month`
-- "Give me the full analytics rundown for the last 30 days" → `umami_traffic_report`
-- "Which landing page has the worst bounce rate?" → `umami_get_metrics` with `type=entry`, `expanded=true`
-- "How many contact form submits this week?" → `umami_get_events_series` with `event=contact-form-submit`
-- "Where do people drop off between pricing and signup?" → `umami_get_funnel` with `steps=["/pricing", "/signup", "signup-complete"]`
-- "What do people do after landing on the homepage?" → `umami_get_journeys` with `start_path="/"`
-- "How much revenue came from Google this month?" → `umami_get_revenue` with `event=purchase`, `property=amount`, `filters={ utmSource: "google" }`
-- "Where are people clicking on the pricing page?" → `umami_get_click_heatmap` with `path="/pricing"`
-- "Save that funnel so the client can see it in the dashboard" → `umami_create_funnel`
-- "Show me top pages for mobile visitors in Florida" → `umami_get_metrics` with `type=path`, `filters={ device: "mobile", region: "US-FL" }`
-- "What did that session actually do on the site?" → `umami_list_sessions`, then `umami_get_session`
-- "Set up tracking for the new client, its own team, and put jordan on it" → `umami_onboard_client` with `website_name`, `domain`, `team_name`, `grant_user_id`
-- "Wipe the test data before this site goes live" → `umami_reset_website` with `confirm=true`
 
 ## Design notes
 
