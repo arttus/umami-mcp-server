@@ -39,6 +39,7 @@ import { registerRevenueTools } from "./tools/revenue.js";
 import { registerSavedReportTools } from "./tools/saved-reports.js";
 import { registerSegmentTools } from "./tools/segments.js";
 import { registerBoardTools } from "./tools/boards.js";
+import { registerTemplateTools } from "./tools/templates.js";
 
 async function main(): Promise<void> {
   let config;
@@ -70,6 +71,7 @@ async function main(): Promise<void> {
   registerSavedReportTools(server, client);
   registerSegmentTools(server, client);
   registerBoardTools(server, client);
+  registerTemplateTools(server, client);
   registerRawTools(server, client);
 
   const transport = new StdioServerTransport();
