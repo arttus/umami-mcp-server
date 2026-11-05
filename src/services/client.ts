@@ -164,9 +164,9 @@ export class UmamiClient {
   async request<T>(
     method: "GET" | "POST" | "DELETE",
     path: string,
-    options: { params?: QueryParams; body?: unknown; retryOnAuthFailure?: boolean } = {}
+    options: { params?: QueryParams; body?: unknown; retryOnAuthFailure?: boolean; headers?: Record<string, string> } = {}
   ): Promise<T> {
-    const { params, body, retryOnAuthFailure = true } = options;
+    const { params, body, retryOnAuthFailure = true, headers } = options;
     const url = this.buildUrl(path, params);
 
     let response: Response;
@@ -177,6 +177,7 @@ export class UmamiClient {
           Accept: "application/json",
           ...(body ? { "Content-Type": "application/json" } : {}),
           ...(await this.authHeaders()),
+          ...headers,
         },
         body: body ? JSON.stringify(body) : undefined,
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -219,8 +220,8 @@ export class UmamiClient {
     return this.request<T>("GET", path, { params });
   }
 
-  post<T>(path: string, body?: unknown, params?: QueryParams): Promise<T> {
-    return this.request<T>("POST", path, { body, params });
+  post<T>(path: string, body?: unknown, params?: QueryParams, headers?: Record<string, string>): Promise<T> {
+    return this.request<T>("POST", path, { body, params, headers });
   }
 
   delete<T>(path: string): Promise<T> {
