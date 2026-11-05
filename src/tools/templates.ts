@@ -24,8 +24,12 @@ const TEMPLATES = {
   client_report: "Client report",
 } as const;
 
-// Event names that usually mean "someone converted". Used only when conversions is omitted.
+// Event names that usually mean "someone converted". Used only to suggest, when conversions is omitted.
+// Anyone who can reach a site's tracker can send an event with any name, so a name from analytics is
+// untrusted: it must look like a plain identifier and have real volume before it is even suggested.
 const CONVERSION_HINT = /(submit|complete|verified|signup|sign_up|purchase|order|book|checkout|thank|tel_click|call_click|quote|lead_start)/i;
+const SAFE_EVENT = /^[a-z0-9_.-]{1,50}$/i;
+const MIN_EVENT_COUNT = 3;
 
 const chunk = <T,>(a: T[], n = 4) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
@@ -37,14 +41,14 @@ export function registerTemplateTools(server: McpServer, client: UmamiClient): v
       description: `One call builds a finished board for a website, using what it actually tracks.
 
 Templates:
-  - leadgen: KPIs, goal widgets for conversion events, funnel(s), traffic chart, UTM sources and campaigns, channels, landing pages, top events. Creates missing goals; reuses existing goals and funnels.
+  - leadgen: KPIs, goal widgets for conversion events, funnel(s), traffic chart, UTM sources and campaigns, channels, landing pages, top events. Reuses existing goals and funnels; creates goals only for event names you pass in conversions.
   - product: KPIs, live visitors, events chart and tables, top pages, weekly traffic. No retention widget exists in Umami, so it uses realtime and events.
   - client_report: a clean shareable board (KPIs, chart, pages, referrers, countries, devices, map). Set public_share=true to also create a public read-only link; anyone with it can view the board.
 
 Args:
   - website (string, optional): Website ID, name, or domain.
   - template ('leadgen' | 'product' | 'client_report', required)
-  - conversions (string[], optional): leadgen only. Event names to track as goals. If omitted, picks up to 4 conversion-looking events from the last 90 days.
+  - conversions (string[], optional): leadgen only. Event names to make goals from (letters, digits, _ . - only, max 50 chars). If omitted, it shows the goals already saved on the site and only SUGGESTS conversion-looking events from the last 90 days without creating anything, because event names come from public tracker traffic and are untrusted.
   - funnel_steps (string[], optional): leadgen only. Ordered page paths ('/audit') or event names; creates a funnel named funnel_name if none with that name exists. Items starting with '/' are pages.
   - funnel_name (string, optional): default 'Main funnel'.
   - public_share (true, optional): client_report only. Creates a public share link.
@@ -54,7 +58,7 @@ Returns: what was reused, created, and the board.`,
       inputSchema: {
         website: websiteField,
         template: z.enum(["leadgen", "product", "client_report"]),
-        conversions: z.array(z.string().min(1)).max(8).optional(),
+        conversions: z.array(z.string().regex(SAFE_EVENT, "letters, digits, _ . - only, max 50 chars")).max(8).optional(),
         funnel_steps: z.array(z.string().min(1)).min(2).max(8).optional(),
         funnel_name: z.string().min(1).max(100).default("Main funnel"),
         public_share: z.literal(true).optional(),
@@ -84,9 +88,14 @@ Returns: what was reused, created, and the board.`,
             const { startAt, endAt } = resolveRange({ range: "90d", timezone: client.timezone });
             const top = await client.get<{ x: string; y: number }[]>(`/websites/${websiteId}/metrics`, { type: "event", startAt, endAt, limit: 50 });
             const known = new Set(goals.map((g) => (g.parameters as { value?: string }).value));
-            events = (top ?? []).map((r) => r.x).filter((e) => CONVERSION_HINT.test(e) && !known.has(e)).slice(0, Math.max(0, 4 - goalWidgets.length));
-            if (events.length) log.push(`Auto-picked extra conversions: ${events.join(", ")}`);
-            else if (!goals.length) log.push("No saved goals or conversion-looking events found. Pass conversions=[...] to choose.");
+            // Suggest only. A saved goal made from a name nobody vetted is a write, so it needs an explicit conversions list.
+            const suggested = (top ?? [])
+              .filter((r) => typeof r.x === "string" && SAFE_EVENT.test(r.x) && CONVERSION_HINT.test(r.x) && r.y >= MIN_EVENT_COUNT && !known.has(r.x))
+              .map((r) => r.x)
+              .slice(0, 4);
+            if (suggested.length) log.push(`Not created. Events that look like conversions (untrusted names from your analytics): ${JSON.stringify(suggested)}. Pass conversions=[...] to make goals from them.`);
+            else if (!goals.length) log.push("No saved goals and no conversion-looking events found. Pass conversions=[...] to choose.");
+            events = [];
           }
 
           for (const ev of events) {
@@ -137,12 +146,17 @@ Returns: what was reused, created, and the board.`,
 
         const name = `${label} ${TEMPLATES[template]}`;
         const parameters = { websiteId, rows: buildRows(rows) };
-        const existing = (await client.get<Paged<Board>>("/boards", { pageSize: 100 }))?.data?.find((b) => b.name === name);
+        // Same name on a different website is a different board: never rewrite one site's board with another's layout.
+        const existing = (await client.get<Paged<Board>>("/boards", { pageSize: 100 }))?.data?.find((b) => b.name === name && b.parameters?.websiteId === websiteId);
 
         if (dry_run) {
           return textResult(`DRY RUN, nothing written.\n${log.join("\n")}\n${existing ? "Would update" : "Would create"} board "${name}" with ${rows.flat().length} widgets: ${rows.flat().map((w) => w.type).join(", ")}`);
         }
 
+        if (existing) {
+          const shares = await client.get<Paged<unknown>>(`/boards/${existing.id}/shares`).catch(() => undefined);
+          if (shares?.count) log.push(`Heads up: this board has ${shares.count} public share link(s). The update is visible there.`);
+        }
         const board = existing
           ? await client.post<Board>(`/boards/${existing.id}`, { parameters })
           : await client.post<Board>("/boards", { type: "website", name, description: "", parameters });

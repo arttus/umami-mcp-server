@@ -134,8 +134,12 @@ const routes = {
   // The real /me response includes the live session token. umami_get_me must never pass it on.
   "/api/me": () => ({ id: "user-1", username: "travis", isAdmin: true, token: "LIVE-SESSION-TOKEN" }),
   "/api/boards": () => ({
-    data: [{ id: "b1", type: "website", name: "Leslie Hanson Real Estate Overview", description: "", createdAt: "2026-08-01T00:00:00Z", parameters: { websiteId: WEBSITE_ID, rows: [{ columns: [{ component: { type: "WebsiteMetricsBar" } }] }] } }],
-    count: 1, page: 1, pageSize: 100,
+    data: [
+      { id: "b1", type: "website", name: "Leslie Hanson Real Estate Overview", description: "", createdAt: "2026-08-01T00:00:00Z", parameters: { websiteId: WEBSITE_ID, rows: [{ columns: [{ component: { type: "WebsiteMetricsBar" } }] }] } },
+      // Same name the product template would use, but on a DIFFERENT website: must never be treated as "the existing board".
+      { id: "b2", type: "website", name: "Leslie Hanson Real Estate Product", description: "", createdAt: "2026-08-02T00:00:00Z", parameters: { websiteId: "99999999-9999-9999-9999-999999999999", rows: [] } },
+    ],
+    count: 2, page: 1, pageSize: 100,
   }),
   "/api/dashboard": () => null,
   "/api/reports": () => ({ data: [{ id: "r1", websiteId: WEBSITE_ID, type: "goal", name: "Lead submitted", parameters: { type: "event", value: "lead_submit" } }], count: 1, page: 1, pageSize: 20 }),
@@ -243,7 +247,9 @@ await check("list boards", "umami_list_boards", {}, ["Overview", "WebsiteMetrics
 await check("get home dashboard", "umami_get_dashboard", {}, ["empty"]);
 await check("leadgen template dry run", "umami_build_template", { template: "leadgen", dry_run: true }, ["DRY RUN", "Reused", "Lead-gen"]);
 await check("client report template dry run", "umami_build_template", { template: "client_report", dry_run: true }, ["DRY RUN", "Client report", "WorldMap"]);
-await check("product template dry run", "umami_build_template", { template: "product", dry_run: true }, ["DRY RUN", "RealtimeActiveUsers"]);
+await check("product template dry run", "umami_build_template", { template: "product", dry_run: true }, ["DRY RUN", "RealtimeActiveUsers", "Would create board"]);
+await check("template ignores a same-named board on another website", "umami_build_template", { template: "product", dry_run: true }, ["Would create board"]);
+await check("template rejects an unsafe conversion name", "umami_build_template", { template: "leadgen", conversions: ['x"; drop'], dry_run: true }, ["conversions"], true);
 await check("list annotations", "umami_list_annotations", {}, ['"count": 0']);
 await check("list links", "umami_list_links", {}, ['"count": 0']);
 await check("list pixels", "umami_list_pixels", {}, ['"count": 0']);
