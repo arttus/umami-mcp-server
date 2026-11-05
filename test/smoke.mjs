@@ -131,7 +131,23 @@ const routes = {
       hasData: 0,
     },
   ],
-  "/api/me": () => ({ id: "user-1", username: "travis", isAdmin: true }),
+  // The real /me response includes the live session token. umami_get_me must never pass it on.
+  "/api/me": () => ({ id: "user-1", username: "travis", isAdmin: true, token: "LIVE-SESSION-TOKEN" }),
+  "/api/boards": () => ({
+    data: [{ id: "b1", type: "website", name: "Leslie Hanson Real Estate Overview", description: "", createdAt: "2026-08-01T00:00:00Z", parameters: { websiteId: WEBSITE_ID, rows: [{ columns: [{ component: { type: "WebsiteMetricsBar" } }] }] } }],
+    count: 1, page: 1, pageSize: 100,
+  }),
+  "/api/dashboard": () => null,
+  "/api/reports": () => ({ data: [{ id: "r1", websiteId: WEBSITE_ID, type: "goal", name: "Lead submitted", parameters: { type: "event", value: "lead_submit" } }], count: 1, page: 1, pageSize: 20 }),
+  [`/api/websites/${WEBSITE_ID}/annotations`]: () => ({ data: [], count: 0, page: 1, pageSize: 20 }),
+  [`/api/websites/${WEBSITE_ID}/shares`]: () => ({ data: [], count: 0, page: 1, pageSize: 20 }),
+  "/api/links": () => ({ data: [], count: 0, page: 1, pageSize: 20 }),
+  "/api/pixels": () => ({ data: [], count: 0, page: 1, pageSize: 20 }),
+  [`/api/websites/${WEBSITE_ID}/event-data/events`]: () => [{ eventName: "claim_click", propertyName: "surface", dataType: 1, total: 4 }],
+  [`/api/websites/${WEBSITE_ID}/event-data/values`]: () => [{ value: "listing_banner", total: 4 }],
+  [`/api/websites/${WEBSITE_ID}/session-data/properties`]: () => [{ propertyName: "plan", total: 2 }],
+  [`/api/websites/${WEBSITE_ID}/revenue/stats`]: () => ({ sum: 1200, count: 3, average: 400 }),
+  "/api/reports/utm": () => ({ utm_source: [{ utm: "chatgpt.com", views: 36 }] }),
 };
 
 const server = http.createServer((req, res) => {
@@ -220,6 +236,41 @@ await check("bad range", "umami_get_stats", { range: "banana" }, ["Unrecognized 
 await check("raw get rejects query string", "umami_api_get", { path: "/me?x=1" }, ["must not contain a query string"], true);
 await check("raw get 404", "umami_api_get", { path: "/does-not-exist" }, ["Not found"], true);
 await check("bad api key", "umami_api_get", { path: "/me", params: {} }, ["travis"]);
+
+// Dashboards, templates, and the extras. Reads and dry runs only: the fake server ignores
+// HTTP methods and bodies, so nothing here proves a write works. See README, Tests.
+await check("list boards", "umami_list_boards", {}, ["Overview", "WebsiteMetricsBar"]);
+await check("get home dashboard", "umami_get_dashboard", {}, ["empty"]);
+await check("leadgen template dry run", "umami_build_template", { template: "leadgen", dry_run: true }, ["DRY RUN", "Reused", "Lead-gen"]);
+await check("client report template dry run", "umami_build_template", { template: "client_report", dry_run: true }, ["DRY RUN", "Client report", "WorldMap"]);
+await check("product template dry run", "umami_build_template", { template: "product", dry_run: true }, ["DRY RUN", "RealtimeActiveUsers"]);
+await check("list annotations", "umami_list_annotations", {}, ['"count": 0']);
+await check("list links", "umami_list_links", {}, ['"count": 0']);
+await check("list pixels", "umami_list_pixels", {}, ['"count": 0']);
+await check("list shares", "umami_list_shares", {}, ['"count": 0']);
+await check("event properties", "umami_list_event_properties", {}, ["claim_click", "surface"]);
+await check("event property values", "umami_get_event_property_values", { event: "claim_click", property: "surface" }, ["listing_banner"]);
+await check("session properties", "umami_list_session_properties", {}, ["plan"]);
+await check("native revenue stats", "umami_get_revenue_stats", {}, ['"sum": 1200']);
+await check("utm report", "umami_run_report", { type: "utm" }, ["chatgpt.com"]);
+await check("get me", "umami_get_me", {}, ["travis"]);
+{
+  // get_me must strip the live session token.
+  const me = await client.callTool({ name: "umami_get_me", arguments: {} });
+  const leaked = me.content.map((p) => p.text).join("").includes("LIVE-SESSION-TOKEN");
+  if (leaked) failures += 1;
+  console.log(`\n${leaked ? "FAIL" : "ok  "} get me does not leak the session token`);
+}
+
+// Guards on the new write tools. None of these reach the API.
+await check("attribution needs its params", "umami_run_report", { type: "attribution" }, ["needs model"], true);
+await check("send_event needs confirm", "umami_send_event", { hostname: "x.com", url: "/" }, ["confirm"], true);
+await check("send_identify needs confirm", "umami_send_identify", { data: { plan: "pro" } }, ["confirm"], true);
+await check("delete_board needs confirm", "umami_delete_board", { board_id: "b1" }, ["confirm"], true);
+await check("delete_link needs confirm", "umami_delete_link", { link_id: "00000000-0000-0000-0000-000000000000" }, ["confirm"], true);
+await check("set_dashboard needs input", "umami_set_dashboard", {}, ["websites"], true);
+await check("dashboard widget needs a website", "umami_set_dashboard", { rows: [[{ type: "WorldMap" }]] }, ["needs 'website'"], true);
+await check("goal widget needs a report", "umami_create_board", { name: "x", rows: [[{ type: "Goal" }]] }, ["report_id"], true);
 
 await client.close();
 server.close();
