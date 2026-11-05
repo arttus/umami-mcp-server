@@ -28,8 +28,13 @@ export function truncate(text: string): string {
   );
 }
 
+// Umami's /me (and login) responses carry the live session token. Every tool that returns JSON goes
+// through here, including the raw GET escape hatch, so secrets are stripped by key name rather than
+// by guessing which paths might contain them.
+const SECRET_KEYS = new Set(["token", "authkey", "sharetoken", "apikey", "password", "secret"]);
+
 export function toJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
+  return JSON.stringify(value, (key, v) => (SECRET_KEYS.has(key.toLowerCase()) && v ? "[redacted]" : v), 2);
 }
 
 export function formatNumber(value: number | undefined | null): string {

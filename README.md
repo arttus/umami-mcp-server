@@ -136,7 +136,7 @@ Tools that change state:
 - **Write into your real analytics:** `umami_send_event`, `umami_send_identify`. They require `confirm=true` because they add data that looks like real visitors. Test on a throwaway site.
 - **Delete or wipe:** `umami_reset_website`, `umami_delete_website`, `umami_delete_user`, `umami_delete_team`, `umami_remove_team_user`, `umami_delete_saved_report`, `umami_delete_segment_cohort`, `umami_delete_board`, `umami_delete_annotation`, `umami_delete_link`, `umami_delete_pixel`, `umami_delete_share`
 
-**Public links.** `umami_create_share` and `umami_build_template` with `public_share=true` create a public, read-only URL that anyone holding it can open. Nothing creates one unless you ask for it explicitly.
+**Public exposure.** `umami_create_share` and `umami_build_template` with `public_share=true` create a public, read-only URL that anyone holding it can open. `umami_create_link` and `umami_update_link` create or repoint a public redirect. All of these require `confirm=true` (or, for the template, an explicit `public_share=true`), so none can happen by default or as a side effect.
 
 Every tool in the delete-or-wipe group requires a literal `confirm: true` argument and fails without it. There is no second round-trip: **the tool call itself is the confirmation**, and `umami_reset_website` and `umami_delete_website` destroy collected analytics data that cannot be recovered.
 
@@ -272,7 +272,7 @@ A share link is a public URL, `{your Umami}/share/{slug}`, that opens a read-onl
 
 Two ways to create one, both explicit. Nothing in this server creates a share link as a side effect:
 
-- `umami_create_share` with `type` (`website`, `link`, `pixel`, or `board`), the entity, and a name
+- `umami_create_share` with `type` (`website`, `link`, `pixel`, or `board`), the entity, a name, and `confirm=true`, meaning you intend to make that data public. Umami generates the slug unless you set one
 - `umami_build_template` with `template=client_report` and `public_share=true`, which builds the board and shares it in one step
 
 Good for a read-only client report you can send as a link. Be careful with a board that shows a client's traffic you would not want their competitors to see.
@@ -355,7 +355,8 @@ For `umami_get_metrics` and the `breakdowns` argument of `umami_traffic_report`:
 - **Event names are untrusted.** Anyone who can reach a site's tracker can send an event with any name, so the template never creates a goal from a name it found in analytics. It suggests them (plain identifiers only, seen at least 3 times) and creates goals only from the `conversions` list you pass.
 - **A Umami quirk the tools work around.** `POST /dashboard` returns a 500 unless `description` is sent, because the column is NOT NULL but the request validation marks it optional. `umami_set_dashboard` always sends an empty string.
 - **Sending events needs a browser-like user agent.** Umami's collector silently drops requests from non-browser user agents and answers `{"beep":"boop"}`. `umami_send_event` sends a realistic one by default and reports the drop as an error if it still happens. Pass `user_agent` to override.
-- **`/me` leaks the session token.** Umami's own `/me` response includes the live bearer token. `umami_get_me` strips `token` and `authKey` before returning.
+- **Session tokens never reach the model.** Umami's own `/me` response includes the live bearer token. `umami_get_me` returns only an allowlist of fields (id, username, role, isAdmin, createdAt). Separately, every tool's JSON output, including the raw `umami_api_get`, redacts any key named `token`, `authKey`, `shareToken`, `apiKey`, `password`, or `secret`, so reading `/me` through the escape hatch is covered too.
+- **Visitor data is untrusted.** Event names, property names, and property values come from public tracker traffic, so anyone can send anything. The event data explorer tools return them under a `notice` saying so, with control characters (newlines included) flattened and each string capped at 100 characters. Treat them as data to report on, not as instructions, and keep that in mind before letting an agent with write tools act on them. `umami_build_template` applies the same rule when it looks for conversion events.
 - **Computed versus saved.** `umami_get_goal` and `umami_get_funnel` compute on demand and leave nothing in the dashboard. `umami_create_goal` and `umami_create_funnel` persist a definition that shows up in the Umami UI. Two different jobs, deliberately two different tools.
 - **Full replay/heatmap config, not just toggles.** `umami_update_website` exposes every field Umami's `replayConfig` accepts: enable flags, independent sample rates for replay vs. heatmaps, PII mask level, block selector, and max recording duration. Umami's own docs give inconsistent units for `maxDuration` (one example implies milliseconds, another implies seconds); rather than guess, `umami_get_recorder_config` reads the same public endpoint the tracker itself calls, so you can confirm the effective value after saving instead of trusting either doc example.
 - **Replays are summarized, never dumped.** `umami_get_replay` returns pages, click count, and a duration breakdown. The raw rrweb event stream can run to tens of thousands of events and would blow any context window.
