@@ -266,6 +266,19 @@ Umami 3 has two kinds of dashboard. **Boards** are named dashboards, each for on
 | `umami_list_pixels`, `umami_create_pixel`, `umami_update_pixel`, `umami_delete_pixel` | 1x1 tracking pixels that count loads, for email opens and similar |
 | `umami_list_shares`, `umami_create_share`, `umami_delete_share` | Public read-only share links for a website, link, pixel, or board |
 
+#### Public share links
+
+A share link is a public URL, `{your Umami}/share/{slug}`, that opens a read-only view of one website, tracking link, pixel, or board. Nobody needs a login, and anyone who has the URL can see it, so treat it like publishing the numbers. Revoke one with `umami_delete_share`.
+
+Two ways to create one, both explicit. Nothing in this server creates a share link as a side effect:
+
+- `umami_create_share` with `type` (`website`, `link`, `pixel`, or `board`), the entity, and a name
+- `umami_build_template` with `template=client_report` and `public_share=true`, which builds the board and shares it in one step
+
+Good for a read-only client report you can send as a link. Be careful with a board that shows a client's traffic you would not want their competitors to see.
+
+**Embedding it in another site (an iframe) does not work out of the box.** Umami sends `Content-Security-Policy: frame-ancestors 'self'`, so browsers refuse to show its pages inside any other site. This was checked against a self-hosted v3.4.1 instance. To allow it, set `ALLOWED_FRAME_URLS` on the Umami server to the site that will embed it (for example `https://example.com`) and redeploy. Umami Cloud does not expose that setting, so on Cloud use the link directly instead of an iframe. The share page also loads its data from your Umami, so the embedding page needs no credentials.
+
 ### Event data explorer (read-only)
 
 | Tool | What it does |
