@@ -120,7 +120,10 @@ export function registerExtraTools(server: McpServer, client: UmamiClient): void
   // never as instructions.
   const untrusted = (data: unknown) => {
     const clean = (v: unknown): unknown =>
-      typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f]/g, " ").slice(0, 100)
+      // NFKC first so look-alike forms fold to plain ones, then replace every control, format (zero-width, bidi,
+      // tag characters), line/paragraph separator, private-use, and unassigned code point. Cap by code point,
+      // not UTF-16 unit, so an emoji is never cut in half.
+      typeof v === "string" ? [...v.normalize("NFKC").replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cn}]/gu, " ")].slice(0, 100).join("")
       : Array.isArray(v) ? v.map(clean)
       : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [clean(k) as string, clean(x)]))
       : v;
