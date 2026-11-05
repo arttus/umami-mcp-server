@@ -2,9 +2,9 @@
 
 An MCP server for [Umami Analytics](https://umami.is). Works against both Umami Cloud and self-hosted instances, and speaks in ranges like `last_month` and site names like `example.com` rather than epoch milliseconds and UUIDs.
 
-Forty-eight tools covering website discovery, traffic stats, time series, ranked breakdowns, custom events, individual sessions, funnels, journeys, goals, retention, revenue, session replays and click heatmaps, saved reports and audience segments that show up in the Umami UI, full admin CRUD for websites/users/teams, a composite client-onboarding tool, and a raw GET escape hatch for anything else in the Umami API.
+Eighty-one tools covering website discovery, traffic stats, time series, ranked breakdowns, custom events, individual sessions, funnels, journeys, goals, retention, revenue, session replays and click heatmaps, saved reports and audience segments that show up in the Umami UI, **dashboards (boards and the home dashboard) built from one-call templates**, chart annotations, tracking links and pixels, an event-property explorer, server-side event sending, full admin CRUD for websites/users/teams, a composite client-onboarding tool, and a raw GET escape hatch for anything else in the Umami API.
 
-**This server is not read-only.** Most tools read, but it can also create, update, and permanently delete websites, users, teams, saved reports, and segments, and it can wipe a website's collected data. See [Write access and safety](#write-access-and-safety) before connecting it to anything you care about.
+**This server is not read-only.** Most tools read, but it can also create, update, and permanently delete websites, users, teams, saved reports, segments, dashboards, links, and pixels, it can write events into your real analytics, and it can wipe a website's collected data. See [Write access and safety](#write-access-and-safety) before connecting it to anything you care about.
 
 Admin tools (creating users, teams, and websites; deleting anything) require **self-hosted Umami with an admin login or admin API key**. Umami Cloud does not expose user or team management via the API, so those tools return a clear error rather than a confusing 404 if pointed at Cloud.
 
@@ -35,6 +35,21 @@ The Umami dashboard is a good place to look at your analytics. It is a tedious p
 - "Make a goal for the thank-you page" → `umami_create_goal`
 - "Create a segment for paid mobile traffic" → `umami_create_segment`
 - "What reports are already saved for this site?" → `umami_list_saved_reports`
+
+**Build the dashboards.** Umami 3 calls them Boards, plus one home dashboard per user. Build a finished one from a template, or lay widgets out yourself. See [Dashboards and templates](#dashboards-and-templates).
+
+- "Build a lead-gen dashboard for example.com" → `umami_build_template` with `template=leadgen`. It reuses the goals and funnels the site already has, creates only what is missing, and builds one board
+- "Make a clean report board for the client" → `umami_build_template` with `template=client_report`
+- "Put all my sites on the home dashboard, the three main ones in full" → `umami_set_dashboard` with `websites=[...]` and `compact_websites=[...]`
+- "Add a traffic chart and top referrers to that board" → `umami_update_board`
+
+**Annotate, tag, and dig into events.**
+
+- "Mark the day we launched the new homepage on the charts" → `umami_create_annotation`
+- "Make a tracking link for the spring email" → `umami_create_link`, or `umami_create_pixel` for email opens
+- "What properties does the claim_click event carry, and what values?" → `umami_list_event_properties`, then `umami_get_event_property_values`
+- "Which source gets credit for signups, first click or last?" → `umami_run_report` with `type=attribution`
+- "Record this webhook as a purchase event" → `umami_send_event` with `confirm=true`
 
 **Run the instance.** Self-hosted, with an admin credential.
 
@@ -116,9 +131,12 @@ The credentials you give this server are the real ceiling on what it can do. An 
 
 Tools that change state:
 
-- **Create:** `umami_create_website`, `umami_create_user`, `umami_create_team`, `umami_create_goal`, `umami_create_funnel`, `umami_create_segment`, `umami_create_cohort`, `umami_onboard_client`
-- **Update:** `umami_update_website`, `umami_update_user`, `umami_update_team`, `umami_update_team_user`, `umami_add_team_user`, `umami_join_team`
-- **Delete or wipe:** `umami_reset_website`, `umami_delete_website`, `umami_delete_user`, `umami_delete_team`, `umami_remove_team_user`, `umami_delete_saved_report`, `umami_delete_segment_cohort`
+- **Create:** `umami_create_website`, `umami_create_user`, `umami_create_team`, `umami_create_goal`, `umami_create_funnel`, `umami_create_segment`, `umami_create_cohort`, `umami_create_board`, `umami_set_dashboard`, `umami_create_annotation`, `umami_create_link`, `umami_create_pixel`, `umami_create_share`, `umami_onboard_client`, `umami_build_template` (creates goals, funnels, and a board; see below)
+- **Update:** `umami_update_website`, `umami_update_user`, `umami_update_team`, `umami_update_team_user`, `umami_add_team_user`, `umami_join_team`, `umami_update_board`, `umami_update_annotation`, `umami_update_link`, `umami_update_pixel`
+- **Write into your real analytics:** `umami_send_event`, `umami_send_identify`. They require `confirm=true` because they add data that looks like real visitors. Test on a throwaway site.
+- **Delete or wipe:** `umami_reset_website`, `umami_delete_website`, `umami_delete_user`, `umami_delete_team`, `umami_remove_team_user`, `umami_delete_saved_report`, `umami_delete_segment_cohort`, `umami_delete_board`, `umami_delete_annotation`, `umami_delete_link`, `umami_delete_pixel`, `umami_delete_share`
+
+**Public links.** `umami_create_share` and `umami_build_template` with `public_share=true` create a public, read-only URL that anyone holding it can open. Nothing creates one unless you ask for it explicitly.
 
 Every tool in the delete-or-wipe group requires a literal `confirm: true` argument and fails without it. There is no second round-trip: **the tool call itself is the confirmation**, and `umami_reset_website` and `umami_delete_website` destroy collected analytics data that cannot be recovered.
 
@@ -213,6 +231,69 @@ Everything above computes on demand and leaves no trace in the dashboard. These 
 | `umami_remove_team_user` | **Destructive.** Remove a member from a team. Requires `confirm=true` |
 | `umami_delete_team` | **Destructive.** Delete a team. Requires `confirm=true` |
 
+### Dashboards and templates
+
+Umami 3 has two kinds of dashboard. **Boards** are named dashboards, each for one website. The **home dashboard** is the single page Umami opens on login, one per user, and its widgets can come from several websites. Both are built from a grid: rows of up to 4 widgets.
+
+| Tool | What it does |
+| --- | --- |
+| `umami_build_template` | One call builds a finished board from an opinionated template (below). Detects what the site tracks, reuses saved goals and funnels, creates only what is missing, and updates the board in place if it already exists. `dry_run=true` shows the plan without writing |
+| `umami_list_boards` | List dashboards with the widget types in each |
+| `umami_create_board` | Create a board for one website from a `preset` or your own `rows` |
+| `umami_update_board` | Rename a board, or replace its layout |
+| `umami_delete_board` | **Destructive.** Delete a board. Requires `confirm=true` |
+| `umami_get_dashboard` | Read the home dashboard |
+| `umami_set_dashboard` | Build the home dashboard, replacing its layout. `websites` get full columns side by side, `compact_websites` get a KPI row, or pass `rows` for a custom layout where every widget names its own `website` |
+
+**Templates** for `umami_build_template`:
+
+| Template | Builds | Notes |
+| --- | --- | --- |
+| `leadgen` | KPI bar, goal widgets, funnels, traffic chart, UTM source and campaign tables, channels, landing pages, top events and referrers | Reuses the site's saved goals and funnels. `conversions` lists event names to track as goals; if omitted it shows existing goals first, then adds up to 4 conversion-looking events (names containing submit, complete, verified, signup, purchase, book, checkout, tel_click and similar). `funnel_steps` creates a funnel if none with that name exists |
+| `product` | KPI bar, live visitors, traffic chart, events bar and chart, event and page tables, devices, browsers, weekly traffic | Umami has no retention widget, so this uses realtime and events. Needs the site to send custom events to show anything beyond traffic |
+| `client_report` | KPI bar, traffic chart, top pages and referrers, countries and devices, world map | Clean and shareable. `public_share=true` also creates a public share link for the board |
+
+**Presets** for `umami_create_board`: `overview`, `acquisition`, `behavior`, `realtime`, `revenue`. A preset is a fixed layout with no goal or funnel logic. A template is a preset plus the site-aware parts.
+
+**Widgets:** `WebsiteMetricsBar`, `WebsiteChart`, `MetricsTable`, `WorldMap`, `WeeklyTraffic`, `UTM`, `EventsMetricsBar`, `EventsChart`, `Goal`, `Funnel`, `RealtimeHeader`, `RealtimeChart`, `RealtimeActiveUsers`, `RevenueMetricsBar`, `RevenueChart`, `RevenueMetricsTable`, `TextBlock`. `Goal` and `Funnel` need a `report_id` from `umami_list_saved_reports`. `MetricsTable` takes `props.type` (path, referrer, country, browser, os, device, event, entry, exit, channel, and more) and `props.limit` (5, 10, or 20).
+
+### Annotations, tracking links, pixels, and shares
+
+| Tool | What it does |
+| --- | --- |
+| `umami_list_annotations`, `umami_create_annotation`, `umami_update_annotation`, `umami_delete_annotation` | Dated notes pinned to a website's charts ("launched new homepage"). Umami 3.4+ |
+| `umami_list_links`, `umami_create_link`, `umami_update_link`, `umami_delete_link` | Short tracking links that redirect to a URL and count clicks |
+| `umami_list_pixels`, `umami_create_pixel`, `umami_update_pixel`, `umami_delete_pixel` | 1x1 tracking pixels that count loads, for email opens and similar |
+| `umami_list_shares`, `umami_create_share`, `umami_delete_share` | Public read-only share links for a website, link, pixel, or board |
+
+### Event data explorer (read-only)
+
+| Tool | What it does |
+| --- | --- |
+| `umami_list_event_properties` | Every custom event and the property names recorded on it, with counts. Start here to see what an event carries |
+| `umami_get_event_property_values` | Distinct values and counts for one property of one event |
+| `umami_list_session_properties` | Properties attached to visitors through `umami.identify()` |
+| `umami_get_session_property_values` | Distinct values and counts for one visitor property |
+
+### Revenue and reports (read-only)
+
+| Tool | What it does |
+| --- | --- |
+| `umami_get_revenue_stats` | Umami's native revenue summary with comparison to the previous period. Needs revenue tracking enabled |
+| `umami_get_revenue_chart` | Native revenue over time |
+| `umami_get_revenue_breakdown` | Native revenue by referrer, channel, country, or region |
+| `umami_run_report` | Compute a report type with no dedicated tool: `utm`, `attribution` (first or last click, for a page or event), `breakdown` (counts grouped by fields), or `performance` (Core Web Vitals). Nothing is saved |
+
+`umami_get_revenue` (in Behavior analysis) sums a numeric property on a custom event. The native `umami_get_revenue_*` tools read Umami's own revenue reports. Use whichever matches how your site reports revenue.
+
+### Sending data in
+
+| Tool | What it does |
+| --- | --- |
+| `umami_send_event` | Record a pageview or custom event, as if a visitor triggered it. For server-side events like webhooks. **Writes into real stats.** Requires `confirm=true` |
+| `umami_send_identify` | Attach properties to a visitor. **Writes into real stats.** Requires `confirm=true` |
+| `umami_get_me` | The logged-in user's id, username, and role. Useful to confirm credentials work. Session tokens are stripped from the response |
+
 ### Provisioning
 
 | Tool | What it does |
@@ -256,6 +337,11 @@ For `umami_get_metrics` and the `breakdowns` argument of `umami_traffic_report`:
 - **Undocumented endpoints, marked as such.** Saved goals, funnels, journeys, and retention reports live on `POST/GET/DELETE /reports`; segments and cohorts live on a separate `/websites/:id/segments`. Neither is in Umami's published REST API. Both were mapped by watching the web UI's own network calls, and the exact request shapes are documented in comments at the top of `src/tools/saved-reports.ts` and `src/tools/segments.ts`, including which enum values a 400 response confirmed. These can change without notice on a future Umami version, unlike the documented analytics endpoints.
 - **Derived analytics cost API calls.** Funnels and journeys have no endpoint, so both walk session activity trails: one `/sessions` page plus one `/sessions/:id/activity` call per session, capped by `max_sessions` (default 500, max 2000) and reported back as `truncated` when the range held more. The click heatmap downloads up to `max_replays` recordings (default 100). Umami Cloud rate-limits to 50 calls per 15 seconds, and the client surfaces that as a plain message rather than a raw 429. Raise the caps deliberately.
 - **Retention needs instrumentation, not just traffic.** `umami_get_retention` is built from `distinctId`, which only exists where the site calls `umami.identify(persistentId)`. Without it, cohort size is 0 no matter how much real traffic there is, and the tool says so instead of reporting a broken curve.
+- **Dashboards are undocumented too.** Boards live on `/boards` and the home dashboard on `/dashboard`. Neither is in Umami's published API. The shapes (`parameters.rows[].columns[].component`, the widget type list, the 4-column editor limit and 300px minimum column width) come from Umami's source and a live 400 response, and are noted at the top of `src/tools/boards.ts`.
+- **Templates read the site first.** `umami_build_template` looks at the site's saved goals and funnels and its top events from the last 90 days before building, so a template on a site with no conversion events produces a board with empty goal widgets, not an error. The board is named `<site> <template>`, and running it again updates that board instead of making a duplicate.
+- **A Umami quirk the tools work around.** `POST /dashboard` returns a 500 unless `description` is sent, because the column is NOT NULL but the request validation marks it optional. `umami_set_dashboard` always sends an empty string.
+- **Sending events needs a browser-like user agent.** Umami's collector silently drops requests from non-browser user agents and answers `{"beep":"boop"}`. `umami_send_event` sends a realistic one by default and reports the drop as an error if it still happens. Pass `user_agent` to override.
+- **`/me` leaks the session token.** Umami's own `/me` response includes the live bearer token. `umami_get_me` strips `token` and `authKey` before returning.
 - **Computed versus saved.** `umami_get_goal` and `umami_get_funnel` compute on demand and leave nothing in the dashboard. `umami_create_goal` and `umami_create_funnel` persist a definition that shows up in the Umami UI. Two different jobs, deliberately two different tools.
 - **Full replay/heatmap config, not just toggles.** `umami_update_website` exposes every field Umami's `replayConfig` accepts: enable flags, independent sample rates for replay vs. heatmaps, PII mask level, block selector, and max recording duration. Umami's own docs give inconsistent units for `maxDuration` (one example implies milliseconds, another implies seconds); rather than guess, `umami_get_recorder_config` reads the same public endpoint the tracker itself calls, so you can confirm the effective value after saving instead of trusting either doc example.
 - **Replays are summarized, never dumped.** `umami_get_replay` returns pages, click count, and a duration breakdown. The raw rrweb event stream can run to tens of thousands of events and would blow any context window.
@@ -274,15 +360,15 @@ npm test
 
 Three suites run against a fake Umami API over a real MCP stdio client. `test/smoke.mjs` exercises the analytics tools plus their error paths. `test/auth.mjs` covers the self-hosted login exchange and the token refresh that fires when a cached bearer token goes stale. `test/admin.mjs` covers website/user/team CRUD, team membership, the composite onboarding tool, and confirms every destructive admin tool refuses to run without `confirm=true`.
 
-Coverage is the core analytics and admin surface. The behavior-analysis, replay, saved-report, and segment tools are not yet in the suites and have been verified by hand against a live self-hosted instance.
+Coverage is the core analytics and admin surface. The behavior-analysis, replay, saved-report, segment, dashboard, template, annotation, link, pixel, share, event-data, revenue, report, and send tools are not yet in the suites. They have been verified by hand against a live self-hosted instance (Umami v3.4.1): the read-only calls, the home dashboard, boards, and the `leadgen` template were run end to end. The `product` and `client_report` templates have only been dry-run. The create, update, and delete calls for annotations, links, pixels, and shares, and the two `umami_send_*` tools, have not been exercised against a live instance yet.
 
 ## Verified against
 
-Umami v3 API as of August 2026.
+Umami v3 API as of November 2026, run against self-hosted Umami v3.4.1.
 
 Documented endpoints: `/websites`, `/websites/:id`, `/websites/:id/stats`, `/pageviews`, `/metrics`, `/metrics/expanded`, `/events/series`, `/active`, `/daterange`, `/sessions`, `/sessions/:id`, `/sessions/:id/activity`, `/websites/:id/reset`, `/websites/:id/event-data/values`, `/users`, `/admin/users`, `/users/:id`, `/users/:id/websites`, `/users/:id/teams`, `/teams`, `/teams/join`, `/teams/:id`, `/teams/:id/users`, `/teams/:id/users/:userId`, `/teams/:id/websites`.
 
-Undocumented endpoints, mapped from the web UI: `/reports` (saved goals, funnels, journeys, retention), `/websites/:id/segments` (segments and cohorts), `/websites/:id/replays`, `/websites/:id/replays/:id`.
+Undocumented endpoints, mapped from the web UI and Umami's source: `/reports` (saved goals, funnels, journeys, retention) and `/reports/:type` (attribution, breakdown, utm, performance), `/websites/:id/segments` (segments and cohorts), `/websites/:id/replays`, `/websites/:id/replays/:id`, `/boards`, `/boards/:id`, `/dashboard`, `/links`, `/pixels`, `/share`, `/share/id/:id`, `/websites/:id/annotations`, `/websites/:id/shares`, `/websites/:id/revenue/{stats,chart,metrics}`, `/websites/:id/event-data/{events,values}`, `/websites/:id/session-data/{properties,values}`, `/send`.
 
 Cloud requests go to `https://api.umami.is/v1` with a bearer token; self-hosted requests go to `{base}/api`. User and team management endpoints only exist on self-hosted instances.
 
